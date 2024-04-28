@@ -9,7 +9,7 @@ def download_new_scanned_emails(email_user, email_pass, email_server):
     mail.login(email_user, email_pass)
     mail.select("inbox")
 
-    result, data = mail.uid('search', None, '(HEADER Subject "scanned from Lexmark Printer")')
+    result, data = mail.uid('search', None, '(HEADER Subject "Lexmark-Scan")')
 
     email_ids = data[0].split()
     email_ids = [e_id.decode() for e_id in email_ids]

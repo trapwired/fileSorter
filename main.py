@@ -1,4 +1,6 @@
 import datetime
+import random
+import shutil
 import time
 
 from gpt4all import GPT4All
@@ -12,7 +14,8 @@ from PIL import Image
 
 MIN_LENGTH = 15
 PATTERN = r'["\']?\s*([^"\'>\s]*\.pdf)\s*["\']?'
-CATEGORIES = ['Rechnungen', 'Sonstiges', 'Dokumente', 'Wohnung', 'Verträge', 'Vorsorge', 'Bank', 'Unsicher']
+CATEGORIES = ['Rechnungen', 'Sonstiges', 'Dokumente', 'Wohnung', 'Verträge', 'Vorsorge', 'Bank', 'Unsicher',
+              'Rückforderungsbelege']
 
 
 def list_files(directory):
@@ -88,17 +91,19 @@ def is_valid(match):
     return True
 
 
+def find_words(text):
+    pattern = '|'.join(CATEGORIES)  # create a pattern that matches any word in the list
+    matches = re.findall(pattern, text, re.IGNORECASE)
+    return matches
+
+
 def find_categories(text):
-    found_words = []
-    tidied_text = text.replace('"', "").replace("'", "").replace(".", "").lower()
-    tidied_split = [x.strip() for x in tidied_text.split()]
-    # TODO find better way to find word even if subword
-    for category in CATEGORIES:
-        if category.lower() in tidied_split:
-            found_words.append(category)
+    found_words = find_words(text)
 
     if len(found_words) == 1:
         return found_words[0]
+
+    # TODO maybe just use first?
 
     print(f"CATEGORY: input not matched: '{text}' Found: {found_words}")
     return None
@@ -106,11 +111,12 @@ def find_categories(text):
 
 def get_document_name(llm_model, input_text):
     description = ("Ich habe ein pdf Dokument, welches folgenden Text enthält. Was ist ein passender und präziser "
-                   "deuscher Dateiname für dieses Dokument? Bitte hänge ans Ende des Dateinamens .pdf an")
+                   "deutscher Dateiname für dieses Dokument? Sei so präzise wie möglich: ergänze Namen erwähnter "
+                   "Personen oder Firmen im Dateinamen und bitte hänge ans Ende des Dateinamens .pdf an")
 
     for i in range(10):
         llm_output = llm_model.generate(
-            f"{description} Inhalt: {input_text}", temp=2.5, max_tokens=200)
+            f"{description} Inhalt der Dokuments: {input_text}", temp=2.5, max_tokens=200)
         llm_output = llm_output.replace("\n", " ")
         match = find_match(llm_output)
         if is_valid(match):
@@ -135,6 +141,25 @@ def get_document_category(llm_model, input_text):
     return None
 
 
+def copy_and_rename(original_file, new_filename, new_folder):
+    output_dir = 'output'
+
+    if not new_folder:
+        new_folder = 'Unsicher'
+
+    if not new_filename:
+        new_filename = f'Unsicher_{random.randint(1, 10000000)}.pdf'
+
+    dst_folder = os.path.join(output_dir, new_folder)
+    os.makedirs(dst_folder, exist_ok=True)
+
+    # Construct the destination file path
+    dst_file_path = os.path.join(dst_folder, new_filename)
+
+    # Copy and rename the file
+    shutil.copy2(original_file, dst_file_path)
+
+
 if __name__ == '__main__':
     input_directory = 'input'
     files = list_files(input_directory)
@@ -142,12 +167,18 @@ if __name__ == '__main__':
     for file in files:
         with model.chat_session():
             start_time = time.time()
+            input_file = os.path.join(input_directory, file)
 
             # read pdf file
-            content = ocr_file(os.path.join(input_directory, file))
-            content = content[:2040]
+            content = ocr_file(input_file)
+            content = content[:2000]
+
+            # get filename and category
             doc_name = get_document_name(model, content)
             doc_category = get_document_category(model, content)
+
+            # copy to correct folder and rename
+            copy_and_rename(input_file, doc_name, doc_category)
 
             end_time = time.time()
             time_taken = end_time - start_time

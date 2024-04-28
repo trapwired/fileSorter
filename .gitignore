@@ -163,3 +163,4 @@ cython_debug/
 /input/
 /.idea/FileSorter.iml
 /input.txt
+/output/

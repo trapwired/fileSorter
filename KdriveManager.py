@@ -14,7 +14,7 @@ if __name__ == '__main__':
         data = f.read()
 
     URL = f"https://api.infomaniak.com/3/drive/{drive_id}/upload?total_size={total_size}"
-    URL = f"https://api.infomaniak.com/2/drive/{drive_id}/activities/reports"
+    URL = f"https://api.infomaniak.com/2/drive/{drive_id}/activities"
 
     headers = {
         "Authorization": f"Bearer {api_token}",
