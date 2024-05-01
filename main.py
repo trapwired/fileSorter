@@ -149,6 +149,7 @@ def copy_and_rename(original_file, new_filename, new_folder):
 
     if not new_filename:
         new_filename = f'Unsicher_{random.randint(1, 10000000)}.pdf'
+        new_folder = 'Unsicher'
 
     dst_folder = os.path.join(output_dir, new_folder)
     os.makedirs(dst_folder, exist_ok=True)
@@ -176,6 +177,10 @@ if __name__ == '__main__':
             # get filename and category
             doc_name = get_document_name(model, content)
             doc_category = get_document_category(model, content)
+
+            # Steuern
+            if 'Scan-Steuern' in file:
+                copy_and_rename(input_file, doc_name, 'Steuern Scans')
 
             # copy to correct folder and rename
             copy_and_rename(input_file, doc_name, doc_category)
