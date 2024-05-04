@@ -3,6 +3,7 @@ import random
 import shutil
 import time
 
+from dotenv import load_dotenv
 from gpt4all import GPT4All
 from pathlib import Path
 import os
@@ -14,8 +15,6 @@ from PIL import Image
 
 MIN_LENGTH = 15
 PATTERN = r'["\']?\s*([^"\'>\s]*\.pdf)\s*["\']?'
-CATEGORIES = ['Rechnungen', 'Sonstiges', 'Dokumente', 'Wohnung', 'Verträge', 'Vorsorge', 'Bank', 'Unsicher',
-              'Rückforderungsbelege']
 
 
 def list_files(directory):
@@ -91,14 +90,15 @@ def is_valid(match):
     return True
 
 
-def find_words(text):
-    pattern = '|'.join(CATEGORIES)  # create a pattern that matches any word in the list
+def find_words(text, words):
+    pattern = '|'.join(words)  # create a pattern that matches any word in the list
     matches = re.findall(pattern, text, re.IGNORECASE)
     return matches
 
 
 def find_categories(text):
-    found_words = find_words(text)
+    categories = getenv_list('CATEGORIES')
+    found_words = find_words(text, categories)
 
     if len(found_words) == 1:
         return found_words[0]
@@ -116,7 +116,7 @@ def get_document_name(llm_model, input_text):
 
     for i in range(10):
         llm_output = llm_model.generate(
-            f"{description} Inhalt der Dokuments: {input_text}", temp=2.5, max_tokens=200)
+            f"{description} Inhalt der Dokuments: {input_text}", temp=2, max_tokens=200)
         llm_output = llm_output.replace("\n", " ")
         match = find_match(llm_output)
         if is_valid(match):
@@ -126,7 +126,7 @@ def get_document_name(llm_model, input_text):
 
 
 def get_document_category(llm_model, input_text):
-    categories = f"({', '.join(CATEGORIES)})"
+    categories = f"({', '.join(getenv_list('CATEGORIES'))})"
     description = (f"Kannst du für den folgenden Text bestimmen, in welche der folgenden Kategorien er am besten passt?"
                    f" Bitte gib nur eine Kategorie zurück, und wähle 'Unsicher' wenn du dir nicht sicher bist.")
 
@@ -141,7 +141,7 @@ def get_document_category(llm_model, input_text):
     return None
 
 
-def copy_and_rename(original_file, new_filename, new_folder):
+def copy_and_rename(original_file, new_filename, new_folder, name):
     output_dir = 'output'
 
     if not new_folder:
@@ -150,6 +150,9 @@ def copy_and_rename(original_file, new_filename, new_folder):
     if not new_filename:
         new_filename = f'Unsicher_{random.randint(1, 10000000)}.pdf'
         new_folder = 'Unsicher'
+
+    if len(name) > 0:
+        new_filename = f'{name}_{new_filename}'
 
     dst_folder = os.path.join(output_dir, new_folder)
     os.makedirs(dst_folder, exist_ok=True)
@@ -160,12 +163,35 @@ def copy_and_rename(original_file, new_filename, new_folder):
     # Copy and rename the file
     shutil.copy2(original_file, dst_file_path)
 
+    return new_filename
+
+
+def get_name_part(content, names):
+    matches = find_words(content, names)
+    names_set = set(matches)
+    if len(names_set) == 1:
+        return list(names_set)[0]
+    result = ""
+    sorted_list = sorted(list(names_set))
+    for match in sorted_list:
+        result += match[:2].lower().capitalize()
+    return result
+
+
+def getenv_list(param_name):
+    return [i.strip() for i in os.environ.get(param_name).split(",")]
+
 
 if __name__ == '__main__':
+    load_dotenv()
+    names = getenv_list('NAMES')
+
     input_directory = 'input'
     files = list_files(input_directory)
     model = GPT4All("mistral-7b-openorca.gguf2.Q4_0.gguf", allow_download=False)  # Set to true for initial download
     for file in files:
+        if not file == 'Nebenkosten2024CaDo.pdf':
+            continue
         with model.chat_session():
             start_time = time.time()
             input_file = os.path.join(input_directory, file)
@@ -174,19 +200,22 @@ if __name__ == '__main__':
             content = ocr_file(input_file)
             content = content[:2000]
 
+            # get names in content
+            name_part = get_name_part(content, names)
+
             # get filename and category
             doc_name = get_document_name(model, content)
             doc_category = get_document_category(model, content)
 
             # Steuern
             if 'Scan-Steuern' in file:
-                copy_and_rename(input_file, doc_name, 'Steuern Scans')
+                copy_and_rename(input_file, doc_name, 'Steuern Scans', name_part)
 
             # copy to correct folder and rename
-            copy_and_rename(input_file, doc_name, doc_category)
+            filename = copy_and_rename(input_file, doc_name, doc_category, name_part)
 
             end_time = time.time()
             time_taken = end_time - start_time
 
-            print(f"{file}: '{doc_name}' ({doc_category})")
+            print(f"{file}: '{filename}' ({doc_category})")
             print(f"Time taken: {time_taken} seconds")
