@@ -96,27 +96,41 @@ def find_words(text, words):
     return matches
 
 
-def find_categories(text):
+def find_category(text):
     categories = getenv_list('CATEGORIES')
     found_words = find_words(text, categories)
 
     if len(found_words) == 1:
         return found_words[0]
 
-    # TODO maybe just use first?
-
     print(f"CATEGORY: input not matched: '{text}' Found: {found_words}")
     return None
 
 
+def highest_count_by_two(data_dict):
+    # Sort the dictionary items by count in descending order
+    sorted_items = sorted(data_dict.items(), key=lambda item: item[1], reverse=True)
+
+    # If there's only one item, return its category
+    if len(sorted_items) == 1:
+        return sorted_items[0][0]
+
+    # Check if the highest count is at least 2 greater than the next one
+    if sorted_items[0][1] - sorted_items[1][1] >= 2:
+        return sorted_items[0][0]  # Return the category with the highest count
+    else:
+        return None  # Return None otherwise
+
+
 def get_document_name(llm_model, input_text):
     description = ("Ich habe ein pdf Dokument, welches folgenden Text enthält. Was ist ein passender und präziser "
-                   "deutscher Dateiname für dieses Dokument? Sei so präzise wie möglich: ergänze Namen erwähnter "
-                   "Personen oder Firmen im Dateinamen und bitte hänge ans Ende des Dateinamens .pdf an")
+                   "deutscher Dateiname für dieses Dokument? Sei so präzise wie möglich: Ergänze Namen erwähnter "
+                   "Firmen im Dateinamen und bitte hänge ans Ende des Dateinamens .pdf an. Denk daran: "
+                   "der Output ist ein einziger Dateiname, welcher mit .pdf endet ohne Erklärung oder Leerzeichen!\n")
+    full_text = f"{description}Hier ist der Text-Inhalt des Dokuments: {input_text}"
 
     for i in range(10):
-        llm_output = llm_model.generate(
-            f"{description} Inhalt der Dokuments: {input_text}", temp=2, max_tokens=200)
+        llm_output = llm_model.generate(full_text, temp=2, max_tokens=200)
         llm_output = llm_output.replace("\n", " ")
         match = find_match(llm_output)
         if is_valid(match):
@@ -126,35 +140,44 @@ def get_document_name(llm_model, input_text):
 
 
 def get_document_category(llm_model, input_text):
-    categories = f"({', '.join(getenv_list('CATEGORIES'))})"
-    description = (f"Kannst du für den folgenden Text bestimmen, in welche der folgenden Kategorien er am besten passt?"
-                   f" Bitte gib nur eine Kategorie zurück, und wähle 'Unsicher' wenn du dir nicht sicher bist.")
+    description = (f"Ich habe ein Dokument gescannt mit folgendem Text - kannst du für den folgenden Text bestimmen, "
+                   f"in welche der folgenden Kategorien er am besten passt? Antworte nur mit einer Kategorie, "
+                   f"oder wähle 'Unsicher' als Kategorie, wenn du dir nicht sicher bist.\n")
+    categories = f"Hier sind die einzig erlaubten Kategorien: ({', '.join(getenv_list('CATEGORIES'))})\n"
+    full_text = f"{description}{categories}Hier ist der Text-Inhalt des Dokuments: {input_text}"
 
+    category_counts = {}
     for i in range(10):
-        llm_output = llm_model.generate(
-            f"{description} Kategorien: {categories} Text: {input_text}", temp=2)
+        llm_output = llm_model.generate(full_text, temp=2)
         llm_output = llm_output.replace("\n", " ")
 
-        category = find_categories(llm_output)
+        category = find_category(llm_output)
         if category:
-            return category
+            if category in category_counts:
+                category_counts[category] += 1
+            else:
+                category_counts[category] = 1
+
+            highest_category = highest_count_by_two(category_counts)
+            if highest_category:
+                return highest_category
     return None
 
 
-def copy_and_rename(original_file, new_filename, new_folder, name):
+def copy_and_rename(original_file, new_filename, category, name):
     output_dir = 'output'
 
-    if not new_folder:
-        new_folder = 'Unsicher'
+    if not category:
+        category = 'Unsicher'
 
     if not new_filename:
         new_filename = f'Unsicher_{random.randint(1, 10000000)}.pdf'
-        new_folder = 'Unsicher'
+        category = 'Unsicher'
 
     if len(name) > 0:
         new_filename = f'{name}_{new_filename}'
 
-    dst_folder = os.path.join(output_dir, new_folder)
+    dst_folder = os.path.join(output_dir, category)
     os.makedirs(dst_folder, exist_ok=True)
 
     # Construct the destination file path
@@ -190,8 +213,6 @@ if __name__ == '__main__':
     files = list_files(input_directory)
     model = GPT4All("mistral-7b-openorca.gguf2.Q4_0.gguf", allow_download=False)  # Set to true for initial download
     for file in files:
-        if not file == 'Nebenkosten2024CaDo.pdf':
-            continue
         with model.chat_session():
             start_time = time.time()
             input_file = os.path.join(input_directory, file)
