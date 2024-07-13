@@ -164,3 +164,4 @@ cython_debug/
 /.idea/FileSorter.iml
 /input.txt
 /output/
+/secrets.json

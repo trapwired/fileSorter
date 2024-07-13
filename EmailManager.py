@@ -3,7 +3,7 @@ import email
 import imaplib
 import random
 
-from dotenv import load_dotenv
+from ConfigReader import Config
 
 
 def download_new_scanned_emails(email_user, email_pass, email_server, subject):
@@ -30,7 +30,7 @@ def download_new_scanned_emails(email_user, email_pass, email_server, subject):
             fileName = f'{subject}_{random.randint(1, 10000000)}.pdf'
 
             if bool(fileName):
-                filePath = os.path.join('input', fileName)
+                filePath = os.path.join('input', 'download', fileName)
                 if not os.path.isfile(filePath):
                     with open(filePath, 'wb') as f:
                         f.write(part.get_payload(decode=True))
@@ -44,9 +44,10 @@ def download_new_scanned_emails(email_user, email_pass, email_server, subject):
 
 
 if __name__ == '__main__':
-    load_dotenv()
-    username = os.getenv('EMAIL_USER')
-    server = os.getenv('EMAIL_SERVER')
-    password = os.getenv('EMAIL_PASSWORD')
+    config = Config('secrets.json')
+    username = config.EMAIL_USER
+    server = config.EMAIL_SERVER
+    password = config.EMAIL_PASSWORD
+
     download_new_scanned_emails(username, password, server, 'Scan-Ablegen')
     download_new_scanned_emails(username, password, server, 'Scan-Steuern')

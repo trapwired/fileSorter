@@ -13,6 +13,8 @@ import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
 
+from ConfigReader import Config
+
 MIN_LENGTH = 15
 PATTERN = r'["\']?\s*([^"\'>\s]*\.pdf)\s*["\']?'
 
@@ -72,11 +74,32 @@ def append_date_to_filename(filename):
     return new_filename
 
 
-def tidy_match(match):
+def get_replacements(names):
+    firstnames, lastname = names
+    replacements = [lastname]
+    # append all firstnames to replacements
+    replacements += firstnames
+    # append all firstnames_lastname to replacements
+    replacements += [f"{f}_{lastname}" for f in firstnames]
+    replacements += [f"{f}{lastname}" for f in firstnames]
+    # prepend _ to each element in replacements
+    replacements = [f"_{r}" for r in replacements]
+    return replacements
+
+
+def tidy_match(match, names):
     tidied = match.replace("__", "_")
     tidied = tidied.replace('"', "")
     tidied = tidied.replace("'", "")
     tidied = tidied.strip()
+
+    replacements = get_replacements(names)
+
+    # replace all elements in replacements with _ in tidied, ignoring case
+    for r in replacements:
+        tidied = re.sub(r, "", tidied, flags=re.IGNORECASE)
+
+    # TODO remove dates?
     return tidied
 
 
@@ -96,9 +119,8 @@ def find_words(text, words):
     return matches
 
 
-def find_category(text):
-    categories = getenv_list('CATEGORIES')
-    found_words = find_words(text, categories)
+def find_category(text, categories_list):
+    found_words = find_words(text, categories_list)
 
     if len(found_words) == 1:
         return found_words[0]
@@ -122,7 +144,7 @@ def highest_count_by_two(data_dict):
         return None  # Return None otherwise
 
 
-def get_document_name(llm_model, input_text):
+def get_document_name(llm_model, input_text, names):
     description = ("Ich habe ein pdf Dokument, welches folgenden Text enthält. Was ist ein passender und präziser "
                    "deutscher Dateiname für dieses Dokument? Sei so präzise wie möglich: Ergänze Namen erwähnter "
                    "Firmen im Dateinamen und bitte hänge ans Ende des Dateinamens .pdf an. Denk daran: "
@@ -134,16 +156,16 @@ def get_document_name(llm_model, input_text):
         llm_output = llm_output.replace("\n", " ")
         match = find_match(llm_output)
         if is_valid(match):
-            match = tidy_match(match)
+            match = tidy_match(match, names)
             return append_date_to_filename(match)
     return None
 
 
-def get_document_category(llm_model, input_text):
+def get_document_category(llm_model, input_text, categories_list):
     description = (f"Ich habe ein Dokument gescannt mit folgendem Text - kannst du für den folgenden Text bestimmen, "
                    f"in welche der folgenden Kategorien er am besten passt? Antworte nur mit einer Kategorie, "
-                   f"oder wähle 'Unsicher' als Kategorie, wenn du dir nicht sicher bist.\n")
-    categories = f"Hier sind die einzig erlaubten Kategorien: ({', '.join(getenv_list('CATEGORIES'))})\n"
+                   f"oder wähle 'Unsicher' als Kategorie, wenn du dir nicht zu 100% sicher bist.\n")
+    categories = f"Hier sind die einzig erlaubten Kategorien: ({', '.join(categories_list)})\n"
     full_text = f"{description}{categories}Hier ist der Text-Inhalt des Dokuments: {input_text}"
 
     category_counts = {}
@@ -151,7 +173,7 @@ def get_document_category(llm_model, input_text):
         llm_output = llm_model.generate(full_text, temp=2)
         llm_output = llm_output.replace("\n", " ")
 
-        category = find_category(llm_output)
+        category = find_category(llm_output, categories_list)
         if category:
             if category in category_counts:
                 category_counts[category] += 1
@@ -206,10 +228,14 @@ def getenv_list(param_name):
 
 
 if __name__ == '__main__':
-    load_dotenv()
-    names = getenv_list('NAMES')
+    config = Config('secrets.json')
 
-    input_directory = 'input'
+    names = config.NAMES
+    lastname = config.LASTNAME
+    names_tuple = (names, lastname)
+    categories = config.CATEGORIES
+
+    input_directory = os.path.join('input', 'Rechnungen')
     files = list_files(input_directory)
     model = GPT4All("mistral-7b-openorca.gguf2.Q4_0.gguf", allow_download=False)  # Set to true for initial download
     for file in files:
@@ -225,8 +251,8 @@ if __name__ == '__main__':
             name_part = get_name_part(content, names)
 
             # get filename and category
-            doc_name = get_document_name(model, content)
-            doc_category = get_document_category(model, content)
+            doc_name = get_document_name(model, content, names_tuple)
+            doc_category = get_document_category(model, content, list(categories.keys()))
 
             # Steuern
             if 'Scan-Steuern' in file:

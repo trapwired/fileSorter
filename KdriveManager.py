@@ -1,13 +1,14 @@
 import os
 import requests
 
-from dotenv import load_dotenv
+from ConfigReader import Config
 
 if __name__ == '__main__':
-    load_dotenv()
-    api_token = os.getenv('KDRIVE_API_TOKEN')
-    drive_id = os.getenv('KDRIVE_DRIVE_ID')
-    directory_id = os.getenv('ABLEGEN_FOLDER_ID')
+    config = Config('secrets.json')
+    username = config.EMAIL_USER
+    api_token = config.KDRIVE_API_TOKEN
+    drive_id = config.KDRIVE_DRIVE_ID
+    directory_id = config.ABLEGEN_FOLDER_ID
 
     file_name = 'Kündigung_Lucina_Abo.pdf'
 
