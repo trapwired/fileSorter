@@ -13,6 +13,7 @@ import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
 
+import KdriveManager
 from ConfigReader import Config
 
 MIN_LENGTH = 15
@@ -84,6 +85,7 @@ def get_replacements(names):
     replacements += [f"{f}{lastname}" for f in firstnames]
     # prepend _ to each element in replacements
     replacements = [f"_{r}" for r in replacements]
+    replacements += [lastname]
     return replacements
 
 
@@ -126,6 +128,7 @@ def find_category(text, categories_list):
         return found_words[0]
 
     print(f"CATEGORY: input not matched: '{text}' Found: {found_words}")
+    # TODO match' Dieses Dokument passt am besten in die Kategorie "Rechnung".....'
     return None
 
 
@@ -166,7 +169,8 @@ def get_document_category(llm_model, input_text, categories_list):
                    f"in welche der folgenden Kategorien er am besten passt? Antworte nur mit einer Kategorie, "
                    f"oder wähle 'Unsicher' als Kategorie, wenn du dir nicht zu 100% sicher bist.\n")
     categories = f"Hier sind die einzig erlaubten Kategorien: ({', '.join(categories_list)})\n"
-    full_text = f"{description}{categories}Hier ist der Text-Inhalt des Dokuments: {input_text}"
+    full_text = (f"{description}{categories}Hier ist der Text-Inhalt des Dokuments: {input_text}. Wichtig: Deine "
+                 f"Antwort ist genau ein Wort!")
 
     category_counts = {}
     for i in range(10):
@@ -184,6 +188,22 @@ def get_document_category(llm_model, input_text, categories_list):
             if highest_category:
                 return highest_category
     return None
+
+
+def upload_file(file_path, original_filename, new_filename, category, name):
+    if not category:
+        category = 'Unsicher'
+
+    if not new_filename:
+        new_filename = f'Unsicher_{random.randint(1, 10000000)}.pdf'
+        category = 'Unsicher'
+
+    if len(name) > 0:
+        new_filename = f'{name}_{new_filename}'
+
+    KdriveManager.upload_file(file_path, original_filename, new_filename, category)
+
+    return new_filename
 
 
 def copy_and_rename(original_file, new_filename, category, name):
@@ -223,10 +243,6 @@ def get_name_part(content, names):
     return result
 
 
-def getenv_list(param_name):
-    return [i.strip() for i in os.environ.get(param_name).split(",")]
-
-
 if __name__ == '__main__':
     config = Config('secrets.json')
 
@@ -235,9 +251,9 @@ if __name__ == '__main__':
     names_tuple = (names, lastname)
     categories = config.CATEGORIES
 
-    input_directory = os.path.join('input', 'Rechnungen')
+    input_directory = os.path.join('input', 'Hochzeit')
     files = list_files(input_directory)
-    model = GPT4All("mistral-7b-openorca.gguf2.Q4_0.gguf", allow_download=False)  # Set to true for initial download
+    model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_0.gguf", allow_download=True)  # Set to true for initial download
     for file in files:
         with model.chat_session():
             start_time = time.time()
@@ -252,14 +268,23 @@ if __name__ == '__main__':
 
             # get filename and category
             doc_name = get_document_name(model, content, names_tuple)
-            doc_category = get_document_category(model, content, list(categories.keys()))
+            # doc_category = get_document_category(model, content, list(categories.keys()))
+            doc_category = "Hochzeit"
+
+            # TODO if any category in title:
+            # if not equals, unsicher
 
             # Steuern
-            if 'Scan-Steuern' in file:
-                copy_and_rename(input_file, doc_name, 'Steuern Scans', name_part)
+            # if 'Scan-Steuern' in file:
+            #    copy_and_rename(input_file, doc_name, 'Steuern Scans', name_part)
 
             # copy to correct folder and rename
-            filename = copy_and_rename(input_file, doc_name, doc_category, name_part)
+            # filename = copy_and_rename(input_file, doc_name, doc_category, name_part)
+
+            filename = upload_file(input_directory, file, doc_name, doc_category, name_part)
+
+            if filename:
+                shutil.move(input_file, os.path.join('input', 'uploaded', filename))
 
             end_time = time.time()
             time_taken = end_time - start_time

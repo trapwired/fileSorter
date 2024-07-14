@@ -3,21 +3,21 @@ import requests
 
 from ConfigReader import Config
 
-if __name__ == '__main__':
+
+def upload_file(file_path, original_filename, new_filename, directory):
     config = Config('secrets.json')
-    username = config.EMAIL_USER
     api_token = config.KDRIVE_API_TOKEN
     drive_id = config.KDRIVE_DRIVE_ID
-    directory_id = config.ABLEGEN_FOLDER_ID
+    directory_id = config.CATEGORIES[directory]
+    if not directory_id:
+        raise ValueError(f"Directory '{directory}' not found in the configuration file.")
 
-    file_name = 'Kündigung_Lucina_Abo.pdf'
-
-    file_path = os.path.join('input', file_name)
-    total_size = os.path.getsize(file_path)
-    with open(file_path, 'rb') as f:
+    full_filepath = os.path.join(file_path, original_filename)
+    total_size = os.path.getsize(full_filepath)
+    with open(full_filepath, 'rb') as f:
         data = f.read()
 
-    URL = f"https://api.infomaniak.com/3/drive/{drive_id}/upload?total_size={total_size}&directory_id={directory_id}&file_name={file_name}"
+    URL = f"https://api.infomaniak.com/3/drive/{drive_id}/upload?total_size={total_size}&directory_id={directory_id}&file_name={new_filename}"
 
     headers = {
         "Authorization": f"Bearer {api_token}",
@@ -27,3 +27,7 @@ if __name__ == '__main__':
 
     res = req.json()
     print(res)
+
+
+if __name__ == '__main__':
+    upload_file('output/Rechnungen', 'CaDo_hotel_bergfrieden-preisliste_fuer_und-Jul_24.pdf', 'Test')

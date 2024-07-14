@@ -6,7 +6,7 @@ import random
 from ConfigReader import Config
 
 
-def download_new_scanned_emails(email_user, email_pass, email_server, subject):
+def download_new_scanned_emails(email_user, email_pass, email_server, subject, storage_dir):
     mail = imaplib.IMAP4_SSL(email_server)
     mail.login(email_user, email_pass)
     mail.select("inbox")
@@ -30,7 +30,7 @@ def download_new_scanned_emails(email_user, email_pass, email_server, subject):
             fileName = f'{subject}_{random.randint(1, 10000000)}.pdf'
 
             if bool(fileName):
-                filePath = os.path.join('input', 'download', fileName)
+                filePath = os.path.join(storage_dir, fileName)
                 if not os.path.isfile(filePath):
                     with open(filePath, 'wb') as f:
                         f.write(part.get_payload(decode=True))
@@ -49,5 +49,8 @@ if __name__ == '__main__':
     server = config.EMAIL_SERVER
     password = config.EMAIL_PASSWORD
 
-    download_new_scanned_emails(username, password, server, 'Scan-Ablegen')
-    download_new_scanned_emails(username, password, server, 'Scan-Steuern')
+    storage_dir = os.path.join('input', 'Bussen')
+    os.makedirs(storage_dir, exist_ok=True)
+
+    download_new_scanned_emails(username, password, server, 'Scan-Ablegen', storage_dir)
+    download_new_scanned_emails(username, password, server, 'Scan-Steuern', storage_dir)
