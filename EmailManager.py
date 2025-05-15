@@ -49,8 +49,13 @@ if __name__ == '__main__':
     server = config.EMAIL_SERVER
     password = config.EMAIL_PASSWORD
 
-    storage_dir = os.path.join('input', 'Bussen')
-    os.makedirs(storage_dir, exist_ok=True)
+    storage_dir_ablegen = os.path.join('input', 'Ablegen')
+    os.makedirs(storage_dir_ablegen, exist_ok=True)
+    storage_dir_steuern = os.path.join('input', 'Steuern')
+    os.makedirs(storage_dir_steuern, exist_ok=True)
+    storage_dir_1und1macht3 = os.path.join('input', '1und1macht3')
+    os.makedirs(storage_dir_1und1macht3, exist_ok=True)
 
-    download_new_scanned_emails(username, password, server, 'Scan-Ablegen', storage_dir)
-    download_new_scanned_emails(username, password, server, 'Scan-Steuern', storage_dir)
+    download_new_scanned_emails(username, password, server, 'Scan-Ablegen', storage_dir_ablegen)
+    download_new_scanned_emails(username, password, server, 'Scan-Steuern', storage_dir_steuern)
+    download_new_scanned_emails(username, password, server, 'Scan-1und1macht3', storage_dir_1und1macht3)

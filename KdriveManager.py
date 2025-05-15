@@ -10,7 +10,9 @@ def upload_file(file_path, original_filename, new_filename, directory):
     drive_id = config.KDRIVE_DRIVE_ID
     directory_id = config.CATEGORIES[directory]
     if not directory_id:
-        raise ValueError(f"Directory '{directory}' not found in the configuration file.")
+        # raise ValueError(f"Directory '{directory}' not found in the configuration file.")
+        print(f"Directory '{directory}' not found in the configuration file.")
+        return
 
     full_filepath = os.path.join(file_path, original_filename)
     total_size = os.path.getsize(full_filepath)
@@ -27,6 +29,9 @@ def upload_file(file_path, original_filename, new_filename, directory):
 
     res = req.json()
     print(res)
+
+    if 'result' in res and res['result'] == 'success':
+        return new_filename
 
 
 if __name__ == '__main__':
