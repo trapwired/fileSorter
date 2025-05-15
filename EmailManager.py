@@ -7,6 +7,7 @@ from ConfigReader import Config
 
 
 def download_new_scanned_emails(email_user, email_pass, email_server, subject, storage_dir):
+    download_count = 0
     mail = imaplib.IMAP4_SSL(email_server)
     mail.login(email_user, email_pass)
     mail.select("inbox")
@@ -34,6 +35,7 @@ def download_new_scanned_emails(email_user, email_pass, email_server, subject, s
                 if not os.path.isfile(filePath):
                     with open(filePath, 'wb') as f:
                         f.write(part.get_payload(decode=True))
+                        download_count += 1
 
         # Moving the mail to 'Trash'
         result = mail.uid('STORE', e_id, '+FLAGS', r'(\Deleted)')
@@ -41,10 +43,9 @@ def download_new_scanned_emails(email_user, email_pass, email_server, subject, s
 
     # Close the connection
     mail.logout()
+    return download_count
 
-
-if __name__ == '__main__':
-    config = Config('secrets.json')
+def init_and_download(config):
     username = config.EMAIL_USER
     server = config.EMAIL_SERVER
     password = config.EMAIL_PASSWORD
@@ -56,6 +57,14 @@ if __name__ == '__main__':
     storage_dir_1und1macht3 = os.path.join('input', '1und1macht3')
     os.makedirs(storage_dir_1und1macht3, exist_ok=True)
 
-    download_new_scanned_emails(username, password, server, 'Scan-Ablegen', storage_dir_ablegen)
-    download_new_scanned_emails(username, password, server, 'Scan-Steuern', storage_dir_steuern)
-    download_new_scanned_emails(username, password, server, 'Scan-1und1macht3', storage_dir_1und1macht3)
+    ablegen_count = download_new_scanned_emails(username, password, server, 'Scan-Ablegen', storage_dir_ablegen)
+    steuern_count = download_new_scanned_emails(username, password, server, 'Scan-Steuern', storage_dir_steuern)
+    business_count = download_new_scanned_emails(username, password, server, 'Scan-1und1macht3', storage_dir_1und1macht3)
+
+    print(f"Download completed {ablegen_count + steuern_count + business_count} - Ablegen: {ablegen_count}, Steuern: {steuern_count}, 1und1macht3: {business_count}")
+    return
+
+
+if __name__ == '__main__':
+    config = Config('secrets.json')
+    init_and_download(config)

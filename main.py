@@ -15,6 +15,7 @@ import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
 
+import EmailManager
 import KdriveManager
 from ConfigReader import Config
 
@@ -259,6 +260,8 @@ def try_upload(input_dir, orig_filename, new_filename, folder):
 if __name__ == '__main__':
     INPUT_DIRECTORY = 'input'
     config = Config('secrets.json')
+
+    EmailManager.init_and_download(config)
 
     names = config.NAMES
     lastname = config.LASTNAME
