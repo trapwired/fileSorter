@@ -338,6 +338,78 @@ def get_document_name(url: str, input_text: str, names: Tuple[List[str], str],
     return None
 
 
+def get_recipe_name(url: str, input_text: str, api_token: str) -> Optional[str]:
+    """
+    Generate a recipe filename using LLM based on OCR text from a recipe document.
+
+    Args:
+        url: API endpoint URL
+        input_text: Extracted text from recipe document
+        api_token: API authentication token
+
+    Returns:
+        Generated filename with date appended, or None if unsuccessful
+    """
+    prompt_templates = [
+        ("""Du bist ein Rezept-Experte. Analysiere den folgenden Text aus einem eingescannten Rezept und erstelle einen kurzen, prägnanten Dateinamen.
+
+    REGELN:
+    - Format: Gerichtname_Küche_Besonderheit.pdf
+    - Verwende Unterstriche statt Leerzeichen
+    - Der Name soll das Gericht sofort erkennbar machen (z.B. "Lasagne_Bolognese", "Thai_Curry_Kokosmilch", "Apfelkuchen_Grossmutter")
+    - Inkludiere wenn erkennbar: Hauptzutat, Herkunftsküche, besondere Eigenschaft (vegan, schnell, etc.)
+    - Maximal 50 Zeichen
+    - Keine Sonderzeichen außer Unterstriche und Bindestriche
+    - Antworte NUR mit dem Dateinamen, keine Erklärungen
+
+    Rezepttext:
+    {content}
+
+    Dateiname:"""),
+
+        ("""Erstelle einen suchfreundlichen Dateinamen für dieses Rezept.
+
+    FORMAT: [Gericht]_[Hauptzutat]_[Stil].pdf
+
+    BEISPIELE:
+    - Risotto_Steinpilze_Italienisch.pdf
+    - Bananenbrot_Schokolade_Vegan.pdf
+    - Poulet_Tikka_Masala_Indisch.pdf
+    - Zuercher_Geschnetzeltes_Klassisch.pdf
+    - Overnight_Oats_Beeren_Gesund.pdf
+
+    Gib NUR den Dateinamen aus, nichts anderes.
+
+    Rezepttext:
+    {content}"""),
+
+        ("""Du bist ein Kochbuch-Archivar. Erstelle einen eindeutigen, leicht auffindbaren Dateinamen für dieses Rezept.
+
+    WICHTIG:
+    1. Identifiziere das Gericht (z.B. Suppe, Kuchen, Pasta, Salat)
+    2. Erkenne die Hauptzutaten
+    3. Erkenne den Küchenstil (Italienisch, Asiatisch, Schweizer, etc.)
+    4. Füge besondere Merkmale hinzu (schnell, festlich, vegan, glutenfrei, etc.)
+    5. Verwende Format: Gericht_Details.pdf
+
+    NUR DEN DATEINAMEN AUSGEBEN!
+
+    Rezepttext:
+    {content}"""),
+    ]
+
+    for idx, prompt in enumerate(prompt_templates):
+        for _ in range(RETRIES):
+            full_text = prompt.format(content=input_text)
+            llm_output = ask_infomaniak_ai(full_text, url, api_token)
+            llm_output = clean_llm_output(llm_output)
+            match = find_match(llm_output)
+            if is_valid(match):
+                match = match.replace('"', "").replace("'", "").strip()
+                return append_date_to_filename(match)
+    return None
+
+
 def get_document_category(url: str, input_text: str, categories_list: List[str],
                          api_token: str, extra_context: Optional[str] = None) -> Optional[str]:
     """
@@ -484,7 +556,7 @@ def ask_infomaniak_ai(question: str, url: str, api_token: str) -> str:
     Raises:
         Exception: If API request fails
     """
-    model = "llama3"
+    model = "qwen3"
 
     data_dict = {
         "messages": [
@@ -600,9 +672,19 @@ def main() -> None:
             start_time = time.time()
 
             try:
-                filename, category = process_document(
-                    str(file_path), names_tuple, categories, api_url, api_token
-                )
+                # Special handling for Rezepte directory
+                if directory.name == 'Rezepte':
+                    content = ocr_file(str(file_path))
+                    content = content[:2000]
+                    recipe_filename = get_recipe_name(api_url, content, api_token)
+                    if not recipe_filename:
+                        recipe_filename = f'Rezept_{random.randint(1, 10000000)}.pdf'
+                    filename = recipe_filename
+                    category = 'Rezepte'
+                else:
+                    filename, category = process_document(
+                        str(file_path), names_tuple, categories, api_url, api_token
+                    )
 
                 # Special handling for specific directories
                 if directory.name == 'Steuern':

@@ -162,7 +162,8 @@ def init_and_download(config: Config) -> Tuple[int, int, int]:
     storage_dirs = {
         'Ablegen': base_dir / 'Ablegen',
         'Steuern': base_dir / 'Steuern',
-        '1und1macht3': base_dir / '1und1macht3'
+        '1und1macht3': base_dir / '1und1macht3',
+        'Rezepte': base_dir / 'Rezepte'
     }
 
     for dir_name, dir_path in storage_dirs.items():
@@ -174,7 +175,8 @@ def init_and_download(config: Config) -> Tuple[int, int, int]:
     email_subjects = {
         'Ablegen': 'Scan-Ablegen',
         'Steuern': 'Scan-Steuern',
-        '1und1macht3': 'Scan-1und1macht3'
+        '1und1macht3': 'Scan-1und1macht3',
+        'Rezepte': 'Rezept'
     }
 
     for category, subject in email_subjects.items():
@@ -194,13 +196,15 @@ def init_and_download(config: Config) -> Tuple[int, int, int]:
         f"Download completed: Total={total}, "
         f"Ablegen={download_counts['Ablegen']}, "
         f"Steuern={download_counts['Steuern']}, "
-        f"1und1macht3={download_counts['1und1macht3']}"
+        f"1und1macht3={download_counts['1und1macht3']}, "
+        f"Rezepte={download_counts['Rezepte']}"
     )
 
     return (
         download_counts['Ablegen'],
         download_counts['Steuern'],
-        download_counts['1und1macht3']
+        download_counts['1und1macht3'],
+        download_counts['Rezepte']
     )
 
 
