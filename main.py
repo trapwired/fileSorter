@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 MIN_LENGTH = 15
 PATTERN = r'["\']?\s*([^"\'>\s]*\.pdf)\s*["\']?'
 RETRIES = 3
+REJECTED_NAMES = [
+    'dokumenttyp_firma_thema_datum',
+    'typ_firma_details',
+    'gericht_hauptzutat_stil',
+    'gerichtname_küche_besonderheit',
+    'gericht_details',
+]
 
 # Statistics for prompt effectiveness
 prompt_stats = {
@@ -201,6 +208,13 @@ def is_valid(match: Optional[str]) -> bool:
     if len(match) < MIN_LENGTH:
         return False
     if len(match.split(".")) != 2:
+        return False
+    name_without_ext = match.rsplit('.', 1)[0].lower()
+    if any(rejected in name_without_ext for rejected in REJECTED_NAMES):
+        logger.warning(f"FILENAME: rejected template name: '{match}'")
+        return False
+    if '[' in name_without_ext or ']' in name_without_ext:
+        logger.warning(f"FILENAME: rejected bracket placeholder name: '{match}'")
         return False
     return True
 
@@ -667,6 +681,9 @@ def main() -> None:
         files = list(directory.iterdir())
         for file_path in files:
             if not file_path.is_file():
+                continue
+            if not file_path.suffix.lower() == '.pdf':
+                logger.debug(f"Skipping non-PDF file: {file_path.name}")
                 continue
 
             start_time = time.time()
