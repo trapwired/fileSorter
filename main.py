@@ -49,6 +49,7 @@ REJECTED_NAMES = [
 prompt_stats = {
     'name': [0, 0, 0],  # One counter per prompt template in get_document_name
     'category': [0, 0, 0],  # One counter per prompt template in get_document_category
+    'recipe': [0, 0, 0],  # One counter per prompt template in get_recipe_name
 }
 
 # Run statistics
@@ -77,15 +78,16 @@ def score_ocr_text(text: str) -> float:
     return alpha_count
 
 
-def ocr_file(pdf_path: str) -> Tuple[str, bool]:
+def ocr_file(pdf_path: str, auto_rotate: bool = True) -> Tuple[str, bool]:
     """
     Extract text from a PDF file using OCR.
-    Tries all 4 rotations (0, 90, 180, 270) per page and picks the one
-    with the best OCR result. The PDF file is then overwritten with the
-    correctly rotated pages.
+    Optionally tries all 4 rotations (0, 90, 180, 270) per page and picks
+    the one with the best OCR result. The PDF file is then overwritten with
+    the correctly rotated pages.
 
     Args:
         pdf_path: Path to the PDF file to process
+        auto_rotate: If True, try all 4 rotations per page and pick the best
 
     Returns:
         Tuple of (extracted text with newlines replaced by spaces, was_rotated)
@@ -104,7 +106,8 @@ def ocr_file(pdf_path: str) -> Tuple[str, bool]:
         best_score = 0.0
         best_rotation = 0
 
-        for rotation in [0, 90, 180, 270]:
+        rotations = [0, 90, 180, 270] if auto_rotate else [0]
+        for rotation in rotations:
             rotated = page_img.rotate(-rotation, expand=True) if rotation != 0 else page_img
             image_path = temp_dir / f"page_{page_num:03}_rot{rotation}.jpg"
             try:
@@ -476,6 +479,7 @@ def get_recipe_name(url: str, input_text: str, api_token: str) -> Optional[str]:
             match = find_match(llm_output)
             if is_valid(match):
                 match = match.replace('"', "").replace("'", "").strip()
+                prompt_stats['recipe'][idx] += 1
                 return append_date_to_filename(match)
     return None
 
@@ -726,7 +730,8 @@ def split_pdf_into_pages(pdf_path: Path) -> List[Path]:
 
 
 def process_document(file_path: str, names_tuple: Tuple[List[str], str],
-                     categories_dict: Dict, api_url: str, token: str) -> Tuple[str, str]:
+                     categories_dict: Dict, api_url: str, token: str,
+                     auto_rotate: bool = True) -> Tuple[str, str]:
     """
     Process a single document file.
 
@@ -736,11 +741,12 @@ def process_document(file_path: str, names_tuple: Tuple[List[str], str],
         categories_dict: Dictionary of categories
         api_url: API endpoint URL
         token: API authentication token
+        auto_rotate: If True, try all 4 rotations during OCR
 
     Returns:
         Tuple of (final_filename, category)
     """
-    content, was_rotated = ocr_file(file_path)
+    content, was_rotated = ocr_file(file_path, auto_rotate)
     if was_rotated:
         run_stats['rotated'] += 1
     content = content[:2000]
@@ -754,7 +760,8 @@ def process_document(file_path: str, names_tuple: Tuple[List[str], str],
 
 def main() -> None:
     """Main execution function."""
-    SPLIT_PAGES_INDIVIDUALLY = True
+    SPLIT_PAGES_INDIVIDUALLY = False
+    AUTO_ROTATE = False
 
     input_directory = Path('input')
     archive_directory = Path('Archive')
@@ -801,7 +808,7 @@ def main() -> None:
             try:
                 # Special handling for Rezepte directory
                 if directory.name == 'Rezepte':
-                    content, was_rotated = ocr_file(str(file_path))
+                    content, was_rotated = ocr_file(str(file_path), AUTO_ROTATE)
                     if was_rotated:
                         run_stats['rotated'] += 1
                     content = content[:2000]
@@ -812,7 +819,8 @@ def main() -> None:
                     category = 'Rezepte'
                 else:
                     filename, category = process_document(
-                        str(file_path), names_tuple, categories, api_url, api_token
+                        str(file_path), names_tuple, categories, api_url, api_token,
+                        AUTO_ROTATE
                     )
 
                 # Special handling for specific directories
@@ -845,7 +853,7 @@ def main() -> None:
     logger.info(f"  Split:       {run_stats['split']} PDFs -> {run_stats['split_pages_total']} pages")
     logger.info(f"  Rotated:     {run_stats['rotated']} PDFs corrected")
     logger.info(f"  Uploaded:    {run_stats['uploaded']} successful, {run_stats['failed']} failed")
-    logger.info(f"  LLM prompts: Name {prompt_stats['name']}, Category {prompt_stats['category']}")
+    logger.info(f"  LLM prompts: Name {prompt_stats['name']}, Category {prompt_stats['category']}, Recipe {prompt_stats['recipe']}")
     logger.info("=" * 50)
 
 
