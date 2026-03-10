@@ -661,6 +661,40 @@ def try_upload(input_dir: str, orig_filename: str, new_filename: str, folder: st
         return False
 
 
+def split_pdf_into_pages(pdf_path: Path) -> List[Path]:
+    """
+    Split a multi-page PDF into individual single-page PDFs.
+
+    Args:
+        pdf_path: Path to the PDF file to split
+
+    Returns:
+        List of paths to the created single-page PDF files
+    """
+    reader = PdfReader(str(pdf_path))
+    if len(reader.pages) <= 1:
+        return [pdf_path]
+
+    page_files = []
+    stem = pdf_path.stem
+    parent = pdf_path.parent
+
+    for page_num, page in enumerate(reader.pages, start=1):
+        writer = PdfWriter()
+        writer.add_page(page)
+        page_path = parent / f"{stem}_Seite{page_num}.pdf"
+        with open(page_path, 'wb') as f:
+            writer.write(f)
+        page_files.append(page_path)
+        logger.info(f"Split page {page_num}/{len(reader.pages)} -> {page_path.name}")
+
+    # Remove the original multi-page PDF
+    pdf_path.unlink()
+    logger.info(f"Removed original multi-page PDF: {pdf_path.name}")
+
+    return page_files
+
+
 def process_document(file_path: str, names_tuple: Tuple[List[str], str],
                      categories_dict: Dict, api_url: str, token: str) -> Tuple[str, str]:
     """
@@ -688,6 +722,8 @@ def process_document(file_path: str, names_tuple: Tuple[List[str], str],
 
 def main() -> None:
     """Main execution function."""
+    SPLIT_PAGES_INDIVIDUALLY = True
+
     input_directory = Path('input')
     archive_directory = Path('Archive')
     archive_directory.mkdir(exist_ok=True)
@@ -716,14 +752,18 @@ def main() -> None:
 
         logger.info(f"Processing directory: {directory}")
 
-        files = list(directory.iterdir())
-        for file_path in files:
-            if not file_path.is_file():
-                continue
-            if not file_path.suffix.lower() == '.pdf':
-                logger.debug(f"Skipping non-PDF file: {file_path.name}")
-                continue
+        # Collect PDF files from directory
+        pdf_files = [f for f in directory.iterdir()
+                     if f.is_file() and f.suffix.lower() == '.pdf']
 
+        # Split multi-page PDFs into individual pages if enabled
+        if SPLIT_PAGES_INDIVIDUALLY:
+            expanded_files = []
+            for pdf_file in pdf_files:
+                expanded_files.extend(split_pdf_into_pages(pdf_file))
+            pdf_files = expanded_files
+
+        for file_path in pdf_files:
             start_time = time.time()
 
             try:
