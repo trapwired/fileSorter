@@ -95,7 +95,7 @@ def upload_file(
 
     # Make upload request
     try:
-        logger.info(f"Uploading {original_filename} as {new_filename} to directory '{directory}'")
+        logger.debug(f"Uploading {original_filename} as {new_filename} to directory '{directory}'")
         response = requests.post(url=api_url, data=data, headers=headers)
         response.raise_for_status()
 
@@ -103,7 +103,7 @@ def upload_file(
         logger.debug(f"Upload response: {result}")
 
         if result.get('result') == 'success':
-            logger.info(f"Successfully uploaded {new_filename}")
+            logger.debug(f"Successfully uploaded {new_filename}")
             return new_filename
         else:
             logger.error(f"Upload failed with response: {result}")

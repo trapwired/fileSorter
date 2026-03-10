@@ -35,12 +35,29 @@ REJECTED_NAMES = [
     'gericht_hauptzutat_stil',
     'gerichtname_küche_besonderheit',
     'gericht_details',
+    'rechnung_telekomag_mobilfunk',
+    'arbeitsvertrag_mustergmbh',
+    'kontoauszug_sparkasse_dezember',
+    'risotto_steinpilze_italienisch',
+    'bananenbrot_schokolade_vegan',
+    'poulet_tikka_masala_indisch',
+    'zuercher_geschnetzeltes_klassisch',
+    'overnight_oats_beeren_gesund',
 ]
 
 # Statistics for prompt effectiveness
 prompt_stats = {
     'name': [0, 0, 0],  # One counter per prompt template in get_document_name
     'category': [0, 0, 0],  # One counter per prompt template in get_document_category
+}
+
+# Run statistics
+run_stats = {
+    'rotated': 0,
+    'split': 0,
+    'split_pages_total': 0,
+    'uploaded': 0,
+    'failed': 0,
 }
 
 
@@ -60,7 +77,7 @@ def score_ocr_text(text: str) -> float:
     return alpha_count
 
 
-def ocr_file(pdf_path: str) -> str:
+def ocr_file(pdf_path: str) -> Tuple[str, bool]:
     """
     Extract text from a PDF file using OCR.
     Tries all 4 rotations (0, 90, 180, 270) per page and picks the one
@@ -71,7 +88,7 @@ def ocr_file(pdf_path: str) -> str:
         pdf_path: Path to the PDF file to process
 
     Returns:
-        Extracted text with newlines replaced by spaces
+        Tuple of (extracted text with newlines replaced by spaces, was_rotated)
     """
     temp_dir = Path('Temp')
     temp_dir.mkdir(exist_ok=True)
@@ -105,10 +122,12 @@ def ocr_file(pdf_path: str) -> str:
 
         best_rotations.append(best_rotation)
         output_text += best_text
-        logger.info(f"Page {page_num}: best rotation = {best_rotation}° (score: {best_score:.0f})")
+        if best_rotation != 0:
+            logger.info(f"Page {page_num}: rotated {best_rotation}°")
 
     # Rewrite the PDF with correctly rotated pages
-    if any(r != 0 for r in best_rotations):
+    was_rotated = any(r != 0 for r in best_rotations)
+    if was_rotated:
         reader = PdfReader(pdf_path)
         writer = PdfWriter()
         for page_idx, rotation in enumerate(best_rotations):
@@ -118,9 +137,8 @@ def ocr_file(pdf_path: str) -> str:
             writer.add_page(page)
         with open(pdf_path, 'wb') as f:
             writer.write(f)
-        logger.info(f"Rewrote PDF with corrected rotations: {best_rotations}")
 
-    return output_text.replace("\n", " ")
+    return output_text.replace("\n", " "), was_rotated
 
 
 def longest_string(strings: List[str]) -> str:
@@ -166,7 +184,7 @@ def find_match(string: str) -> Optional[str]:
     match = re.search(PATTERN, string)
     if match:
         return match.group(0)
-    logger.warning(f"FILENAME: input not matched: '{string}'")
+    logger.debug(f"FILENAME: input not matched: '{string}'")
     return None
 
 
@@ -249,10 +267,10 @@ def is_valid(match: Optional[str]) -> bool:
         return False
     name_without_ext = match.rsplit('.', 1)[0].lower()
     if any(rejected in name_without_ext for rejected in REJECTED_NAMES):
-        logger.warning(f"FILENAME: rejected template name: '{match}'")
+        logger.debug(f"FILENAME: rejected template name: '{match}'")
         return False
     if '[' in name_without_ext or ']' in name_without_ext:
-        logger.warning(f"FILENAME: rejected bracket placeholder name: '{match}'")
+        logger.debug(f"FILENAME: rejected bracket placeholder name: '{match}'")
         return False
     return True
 
@@ -289,7 +307,7 @@ def find_category(text: str, categories_list: List[str]) -> Optional[str]:
     if len(found_words) == 1:
         return found_words[0]
 
-    logger.warning(f"CATEGORY: input not matched: '{text}' Found: {found_words}")
+    logger.debug(f"CATEGORY: input not matched: '{text}' Found: {found_words}")
     return None
 
 
@@ -686,11 +704,11 @@ def split_pdf_into_pages(pdf_path: Path) -> List[Path]:
         with open(page_path, 'wb') as f:
             writer.write(f)
         page_files.append(page_path)
-        logger.info(f"Split page {page_num}/{len(reader.pages)} -> {page_path.name}")
 
-    # Remove the original multi-page PDF
     pdf_path.unlink()
-    logger.info(f"Removed original multi-page PDF: {pdf_path.name}")
+    run_stats['split'] += 1
+    run_stats['split_pages_total'] += len(page_files)
+    logger.info(f"Split {pdf_path.name} into {len(page_files)} pages")
 
     return page_files
 
@@ -710,8 +728,10 @@ def process_document(file_path: str, names_tuple: Tuple[List[str], str],
     Returns:
         Tuple of (final_filename, category)
     """
-    content = ocr_file(file_path)
-    content = content[:2000]  # Limit to first 2000 characters
+    content, was_rotated = ocr_file(file_path)
+    if was_rotated:
+        run_stats['rotated'] += 1
+    content = content[:2000]
 
     name_part = get_name_part(content, names_tuple[0])
     doc_name = get_document_name(api_url, content, names_tuple, token)
@@ -734,7 +754,7 @@ def main() -> None:
         logger.error(f"Failed to load config: {e}")
         return
 
-    EmailManager.init_and_download(config)
+    download_counts = EmailManager.init_and_download(config)
 
     names = config.NAMES
     lastname = config.LASTNAME
@@ -750,7 +770,7 @@ def main() -> None:
         if not directory.is_dir():
             continue
 
-        logger.info(f"Processing directory: {directory}")
+        logger.debug(f"Processing directory: {directory}")
 
         # Collect PDF files from directory
         pdf_files = [f for f in directory.iterdir()
@@ -769,7 +789,9 @@ def main() -> None:
             try:
                 # Special handling for Rezepte directory
                 if directory.name == 'Rezepte':
-                    content = ocr_file(str(file_path))
+                    content, was_rotated = ocr_file(str(file_path))
+                    if was_rotated:
+                        run_stats['rotated'] += 1
                     content = content[:2000]
                     recipe_filename = get_recipe_name(api_url, content, api_token)
                     if not recipe_filename:
@@ -791,24 +813,27 @@ def main() -> None:
 
                 # Upload to category folder
                 if try_upload(str(directory), file_path.name, filename, category, config):
-                    # Move to archive on successful upload
                     shutil.move(str(file_path), str(archive_directory / filename))
-                    logger.info(f"Archived {file_path.name} as {filename}")
+                    run_stats['uploaded'] += 1
+                    elapsed = time.time() - start_time
+                    logger.info(f"{file_path.name} -> {filename} [{category}] ({elapsed:.1f}s)")
+                else:
+                    run_stats['failed'] += 1
 
             except Exception as e:
-                logger.error(f"Error processing {file_path}: {e}")
-                continue
+                run_stats['failed'] += 1
+                logger.error(f"Error processing {file_path.name}: {e}")
 
-            elapsed = time.time() - start_time
-            logger.info(f"Processing time: {elapsed:.2f} seconds\n")
-
-    # Output prompt statistics
-    logger.info("Prompt statistics for document name:")
-    for i, count in enumerate(prompt_stats['name']):
-        logger.info(f"  Prompt {i + 1}: {count} valid results")
-    logger.info("Prompt statistics for document category:")
-    for i, count in enumerate(prompt_stats['category']):
-        logger.info(f"  Prompt {i + 1}: {count} valid results")
+    # Final statistics
+    logger.info("=" * 50)
+    logger.info("Run statistics:")
+    logger.info(f"  Downloaded:  Ablegen={download_counts[0]}, Steuern={download_counts[1]}, "
+                f"1und1macht3={download_counts[2]}, Rezepte={download_counts[3]}")
+    logger.info(f"  Split:       {run_stats['split']} PDFs -> {run_stats['split_pages_total']} pages")
+    logger.info(f"  Rotated:     {run_stats['rotated']} PDFs corrected")
+    logger.info(f"  Uploaded:    {run_stats['uploaded']} successful, {run_stats['failed']} failed")
+    logger.info(f"  LLM prompts: Name {prompt_stats['name']}, Category {prompt_stats['category']}")
+    logger.info("=" * 50)
 
 
 if __name__ == '__main__':

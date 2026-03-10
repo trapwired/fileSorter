@@ -44,13 +44,13 @@ def download_new_scanned_emails(
 
     try:
         # Connect and login
-        logger.info(f"Connecting to {email_server} as {email_user}")
+        logger.debug(f"Connecting to {email_server} as {email_user}")
         mail = imaplib.IMAP4_SSL(email_server)
         mail.login(email_user, email_pass)
         mail.select("inbox")
 
         # Search for emails with specific subject
-        logger.info(f"Searching for emails with subject: {subject}")
+        logger.debug(f"Searching for emails with subject: {subject}")
         result, data = mail.uid('search', None, f'(HEADER Subject "{subject}")')
 
         if result != 'OK':
@@ -59,11 +59,11 @@ def download_new_scanned_emails(
 
         email_ids = data[0].split()
         if not email_ids:
-            logger.info(f"No emails found with subject '{subject}'")
+            logger.debug(f"No emails found with subject '{subject}'")
             return 0
 
         email_ids = [e_id.decode() for e_id in email_ids]
-        logger.info(f"Found {len(email_ids)} email(s) with subject '{subject}'")
+        logger.debug(f"Found {len(email_ids)} email(s) with subject '{subject}'")
 
         # Process each email
         for e_id in email_ids:
@@ -104,7 +104,7 @@ def download_new_scanned_emails(
                             logger.error(f"Failed to save attachment {filename}: {e}")
 
                 if attachment_count > 0:
-                    logger.info(f"Downloaded {attachment_count} attachment(s) from email {e_id}")
+                    logger.debug(f"Downloaded {attachment_count} attachment(s) from email {e_id}")
 
                 # Delete the email
                 result = mail.uid('STORE', e_id, '+FLAGS', r'(\Deleted)')
@@ -168,7 +168,6 @@ def init_and_download(config: Config) -> Tuple[int, int, int]:
 
     for dir_name, dir_path in storage_dirs.items():
         dir_path.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Ensured directory exists: {dir_path}")
 
     # Download emails for each category
     download_counts = {}
@@ -181,12 +180,10 @@ def init_and_download(config: Config) -> Tuple[int, int, int]:
 
     for category, subject in email_subjects.items():
         try:
-            logger.info(f"Processing category: {category}")
             count = download_new_scanned_emails(
                 username, password, server, subject, storage_dirs[category]
             )
             download_counts[category] = count
-            logger.info(f"Downloaded {count} file(s) for {category}")
         except Exception as e:
             logger.error(f"Failed to download emails for {category}: {e}")
             download_counts[category] = 0
