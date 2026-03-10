@@ -657,9 +657,10 @@ def ask_infomaniak_ai(question: str, url: str, api_token: str) -> str:
 
 
 def try_upload(input_dir: str, orig_filename: str, new_filename: str, folder: str,
-               config: Config) -> bool:
+               config: Config) -> Tuple[bool, str]:
     """
-    Attempt to upload a file to KDrive.
+    Attempt to upload a file to KDrive. On 409 conflict, retries with a
+    random number appended to the filename.
 
     Args:
         input_dir: Source directory
@@ -669,14 +670,25 @@ def try_upload(input_dir: str, orig_filename: str, new_filename: str, folder: st
         config: Config object to use for upload
 
     Returns:
-        True if upload succeeded, False otherwise
+        Tuple of (success, actual_filename_used)
     """
-    try:
-        result = KdriveManager.upload_file(input_dir, orig_filename, new_filename, folder, config)
-        return result is not None
-    except Exception as e:
-        logger.error(f"Upload failed for '{orig_filename}': {e}")
-        return False
+    filename_to_try = new_filename
+    for attempt in range(3):
+        try:
+            result = KdriveManager.upload_file(input_dir, orig_filename, filename_to_try, folder, config)
+            return result is not None, filename_to_try
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 409:
+                name, ext = new_filename.rsplit('.', 1)
+                filename_to_try = f"{name}_{random.randint(1000, 9999)}.{ext}"
+                logger.info(f"Filename conflict, retrying as {filename_to_try}")
+            else:
+                logger.error(f"Upload failed for '{orig_filename}': {e}")
+                return False, new_filename
+        except Exception as e:
+            logger.error(f"Upload failed for '{orig_filename}': {e}")
+            return False, new_filename
+    return False, new_filename
 
 
 def split_pdf_into_pages(pdf_path: Path) -> List[Path]:
@@ -812,11 +824,12 @@ def main() -> None:
                     try_upload(str(directory), file_path.name, filename, '1und1macht3', config)
 
                 # Upload to category folder
-                if try_upload(str(directory), file_path.name, filename, category, config):
-                    shutil.move(str(file_path), str(archive_directory / filename))
+                success, actual_filename = try_upload(str(directory), file_path.name, filename, category, config)
+                if success:
+                    shutil.move(str(file_path), str(archive_directory / actual_filename))
                     run_stats['uploaded'] += 1
                     elapsed = time.time() - start_time
-                    logger.info(f"{file_path.name} -> {filename} [{category}] ({elapsed:.1f}s)")
+                    logger.info(f"{file_path.name} -> {actual_filename} [{category}] ({elapsed:.1f}s)")
                 else:
                     run_stats['failed'] += 1
 
