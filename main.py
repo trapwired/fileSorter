@@ -13,6 +13,7 @@ import pytesseract
 import requests
 from pdf2image import convert_from_path
 from PIL import Image
+from pypdf import PdfReader, PdfWriter
 
 import EmailManager
 import KdriveManager
@@ -48,9 +49,23 @@ def list_files(directory: str) -> List[str]:
     return os.listdir(directory)
 
 
+def score_ocr_text(text: str) -> float:
+    """
+    Score OCR text quality by counting alphabetic characters.
+    More real letters = more likely the correct orientation.
+    """
+    if not text.strip():
+        return 0.0
+    alpha_count = sum(1 for c in text if c.isalpha())
+    return alpha_count
+
+
 def ocr_file(pdf_path: str) -> str:
     """
     Extract text from a PDF file using OCR.
+    Tries all 4 rotations (0, 90, 180, 270) per page and picks the one
+    with the best OCR result. The PDF file is then overwritten with the
+    correctly rotated pages.
 
     Args:
         pdf_path: Path to the PDF file to process
@@ -59,28 +74,51 @@ def ocr_file(pdf_path: str) -> str:
         Extracted text with newlines replaced by spaces
     """
     temp_dir = Path('Temp')
-    temp_dir.mkdir(exist_ok=True)  # Ensure temp directory exists
+    temp_dir.mkdir(exist_ok=True)
 
     pdf_file = Path(pdf_path)
     pdf_pages = convert_from_path(pdf_file, 500)
 
-    # Store pages as JPEG images
-    image_file_list = []
-    for page_num, page in enumerate(pdf_pages, start=1):
-        image_path = temp_dir / f"page_{page_num:03}.jpg"
-        page.save(str(image_path), "JPEG")
-        image_file_list.append(image_path)
-
-    # OCR the images
     output_text = ""
-    for image_path in image_file_list:
-        try:
-            text = pytesseract.image_to_string(Image.open(image_path))
-            text = text.replace("-\n", "")
-            output_text += text
-        finally:
-            # Ensure cleanup even if OCR fails
-            image_path.unlink(missing_ok=True)
+    best_rotations = []
+
+    for page_num, page_img in enumerate(pdf_pages, start=1):
+        best_text = ""
+        best_score = 0.0
+        best_rotation = 0
+
+        for rotation in [0, 90, 180, 270]:
+            rotated = page_img.rotate(-rotation, expand=True) if rotation != 0 else page_img
+            image_path = temp_dir / f"page_{page_num:03}_rot{rotation}.jpg"
+            try:
+                rotated.save(str(image_path), "JPEG")
+                text = pytesseract.image_to_string(Image.open(image_path))
+                text = text.replace("-\n", "")
+                score = score_ocr_text(text)
+
+                if score > best_score:
+                    best_score = score
+                    best_text = text
+                    best_rotation = rotation
+            finally:
+                image_path.unlink(missing_ok=True)
+
+        best_rotations.append(best_rotation)
+        output_text += best_text
+        logger.info(f"Page {page_num}: best rotation = {best_rotation}° (score: {best_score:.0f})")
+
+    # Rewrite the PDF with correctly rotated pages
+    if any(r != 0 for r in best_rotations):
+        reader = PdfReader(pdf_path)
+        writer = PdfWriter()
+        for page_idx, rotation in enumerate(best_rotations):
+            page = reader.pages[page_idx]
+            if rotation != 0:
+                page.rotate(rotation)
+            writer.add_page(page)
+        with open(pdf_path, 'wb') as f:
+            writer.write(f)
+        logger.info(f"Rewrote PDF with corrected rotations: {best_rotations}")
 
     return output_text.replace("\n", " ")
 
